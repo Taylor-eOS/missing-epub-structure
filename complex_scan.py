@@ -151,7 +151,11 @@ def analyze_epub(path):
                 if not item:
                     continue
                 href = resolve_href(opf_dir, item['href'])
-                if href.lower().endswith(('.xhtml', '.html', '.htm')):
+                lower_href = href.lower()
+                if lower_href.endswith(('.xhtml', '.html', '.htm')):
+                    filename = PurePosixPath(href).name.lower()
+                    if 'cover' in filename or 'title' in filename or 'copyright' in filename or 'toc' in filename:
+                        continue
                     spine_files.append(href)
             if not spine_files:
                 return ['no_spine_xhtml_files']
@@ -168,13 +172,32 @@ def analyze_epub(path):
             flat_spine = (len(spine_files) <= 2 or largest_size > 300 * 1024 or (total_size and largest_size / total_size > 0.7))
             toc_targets = nav_hrefs if nav_hrefs else ncx_hrefs
             distinct_target_files = set()
+            target_count_per_file = {}
             for t in toc_targets:
                 base = strip_fragment(resolve_href(opf_dir, t))
+                matched = False
                 for s in spine_files:
                     if PurePosixPath(s).name == PurePosixPath(base).name:
                         distinct_target_files.add(s)
+                        target_count_per_file[s] = target_count_per_file.get(s, 0) + 1
+                        matched = True
                         break
-            toc_collapses = (toc_targets and (len(distinct_target_files) <= 2 or len(distinct_target_files) / len(spine_files) < 0.15))
+                if not matched:
+                    continue
+            covered_files = len(distinct_target_files)
+            total_spine_xhtml = len(spine_files)
+            if total_spine_xhtml == 0 or not toc_targets:
+                toc_collapses = False
+            else:
+                coverage_ratio = covered_files / total_spine_xhtml
+                has_low_coverage = coverage_ratio < 0.20
+                has_very_few_targets = covered_files <= 3
+                has_one_heavily_nested = False
+                if covered_files > 0:
+                    max_targets_in_one_file = max(target_count_per_file.values())
+                    if max_targets_in_one_file >= 8 and max_targets_in_one_file >= 0.40 * len(toc_targets):
+                        has_one_heavily_nested = True
+                toc_collapses = (has_low_coverage or has_very_few_targets) and not has_one_heavily_nested
             mid = spine_files[len(spine_files) // 2]
             dom = analyze_dom_structure(z, mid)
             if not has_machine_toc and flat_spine and not dom['has_headings']:
@@ -204,7 +227,6 @@ def analyze_dom_structure(z, candidate_path):
             return {'has_headings': False}
     except Exception:
         return {'has_headings': False}
-
 
 def main(folder):
     p = Path(folder).expanduser().resolve()
