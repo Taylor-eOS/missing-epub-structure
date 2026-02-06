@@ -3,6 +3,7 @@ import sys
 from zipfile import ZipFile
 from pathlib import Path, PurePosixPath
 from lxml import etree
+from urllib.parse import unquote
 import last_folder_helper
 
 def find_opf_path(z):
@@ -56,9 +57,25 @@ def parse_opf(z, opf_path):
         return manifest, spine, opf_dir, spine_toc
 
 def resolve_href(opf_dir, href):
+    decoded_href = unquote(href)
     if not opf_dir:
-        return PurePosixPath(href).as_posix()
-    return (PurePosixPath(opf_dir) / PurePosixPath(href)).as_posix()
+        return PurePosixPath(decoded_href).as_posix()
+    return (PurePosixPath(opf_dir) / PurePosixPath(decoded_href)).as_posix()
+
+def normalize_path(base_path, href):
+    decoded_href = unquote(href)
+    if not base_path:
+        return PurePosixPath(decoded_href).as_posix()
+    resolved = (PurePosixPath(base_path).parent / PurePosixPath(decoded_href)).as_posix()
+    parts = PurePosixPath(resolved).parts
+    normalized_parts = []
+    for part in parts:
+        if part == '..':
+            if normalized_parts:
+                normalized_parts.pop()
+        elif part != '.':
+            normalized_parts.append(part)
+    return '/'.join(normalized_parts) if normalized_parts else ''
 
 def extract_nav_targets(z, opf_dir, manifest):
     for item in manifest.values():
@@ -76,10 +93,10 @@ def extract_nav_targets(z, opf_dir, manifest):
                             epub_type = nav.get('{http://www.idpf.org/2007/ops}type') or nav.get('epub:type') or ''
                             if 'toc' in epub_type or 'toc' in (nav.get('id') or '').lower():
                                 anchors = nav.findall('.//{http://www.w3.org/1999/xhtml}a') or nav.findall('.//a')
-                                hrefs = [a.get('href') for a in anchors if a.get('href')]
+                                hrefs = [(a.get('href'), nav_path) for a in anchors if a.get('href')]
                                 return hrefs
                         anchors = root.findall('.//{http://www.w3.org/1999/xhtml}a') or root.findall('.//a')
-                        return [a.get('href') for a in anchors if a.get('href')]
+                        return [(a.get('href'), nav_path) for a in anchors if a.get('href')]
                 except Exception:
                     continue
     return []
@@ -103,7 +120,7 @@ def extract_ncx_targets(z, opf_dir, manifest, spine_toc):
             parser = etree.XMLParser(recover=True)
             tree = etree.parse(f, parser)
             content_elems = tree.findall('.//content')
-            srcs = [c.get('src') for c in content_elems if c.get('src')]
+            srcs = [(c.get('src'), ncx_href) for c in content_elems if c.get('src')]
             return srcs
     except Exception:
         return []
@@ -152,7 +169,7 @@ def analyze_epub(path):
                     continue
                 href = resolve_href(opf_dir, item['href'])
                 lower_href = href.lower()
-                if lower_href.endswith(('.xhtml', '.html', '.htm')):
+                if lower_href.endswith(('.xhtml', '.html', '.htm', '.xml')):
                     filename = PurePosixPath(href).name.lower()
                     if 'cover' in filename or 'title' in filename or 'copyright' in filename or 'toc' in filename:
                         continue
@@ -173,17 +190,12 @@ def analyze_epub(path):
             toc_targets = nav_hrefs if nav_hrefs else ncx_hrefs
             distinct_target_files = set()
             target_count_per_file = {}
-            for t in toc_targets:
-                base = strip_fragment(resolve_href(opf_dir, t))
-                matched = False
-                for s in spine_files:
-                    if PurePosixPath(s).name == PurePosixPath(base).name:
-                        distinct_target_files.add(s)
-                        target_count_per_file[s] = target_count_per_file.get(s, 0) + 1
-                        matched = True
-                        break
-                if not matched:
-                    continue
+            for t, source_path in toc_targets:
+                base = strip_fragment(t)
+                normalized = normalize_path(source_path, base)
+                if normalized in spine_files:
+                    distinct_target_files.add(normalized)
+                    target_count_per_file[normalized] = target_count_per_file.get(normalized, 0) + 1
             covered_files = len(distinct_target_files)
             total_spine_xhtml = len(spine_files)
             if total_spine_xhtml == 0 or not toc_targets:
@@ -210,6 +222,17 @@ def analyze_epub(path):
     except Exception:
         return ['error_parsing_epub']
 
+def find_headings_recursive(element):
+    if not isinstance(element.tag, str):
+        return False
+    tag = etree.QName(element.tag).localname.lower()
+    if tag in ('h1', 'h2', 'h3', 'h4', 'h5', 'h6'):
+        return True
+    for child in element:
+        if find_headings_recursive(child):
+            return True
+    return False
+
 def analyze_dom_structure(z, candidate_path):
     try:
         with z.open(candidate_path) as f:
@@ -218,17 +241,14 @@ def analyze_dom_structure(z, candidate_path):
             body = tree.find('.//{http://www.w3.org/1999/xhtml}body') or tree.find('.//body')
             if body is None:
                 return {'has_headings': False}
-            for child in body:
-                if not isinstance(child.tag, str):
-                    continue
-                tag = etree.QName(child.tag).localname.lower()
-                if tag in ('h1', 'h2', 'h3'):
-                    return {'has_headings': True}
+            if find_headings_recursive(body):
+                return {'has_headings': True}
             return {'has_headings': False}
     except Exception:
         return {'has_headings': False}
 
 def main(folder):
+    print(f'Checking if files have likely TOC issues.')
     p = Path(folder).expanduser().resolve()
     if not p.is_dir():
         print(f"Folder not found: {p}")
@@ -250,4 +270,3 @@ if __name__ == "__main__":
         folder = '.'
     last_folder_helper.save_last_folder(folder)
     main(folder)
-
