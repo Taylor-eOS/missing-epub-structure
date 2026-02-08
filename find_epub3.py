@@ -65,7 +65,7 @@ def main(folder):
     for epub in epub_paths:
         classification = classify_epub(str(epub))
         if not classification.startswith("EPUB 2"):
-            print(f"{epub.name.strip('.epub')}: {classification}")
+            print(f"{epub.stem}: {classification}")
 
 if __name__ == "__main__":
     default = last_folder_helper.get_last_folder()
