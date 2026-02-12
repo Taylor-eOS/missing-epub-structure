@@ -5,6 +5,8 @@ import io
 from PIL import Image
 import last_folder_helper
 
+print_yes = False
+
 def find_opf_path(z):
     try:
         with z.open('META-INF/container.xml') as f:
@@ -140,7 +142,8 @@ def main(epub_folder):
                 else:
                     report = "no (no clear titlepage indicators)"
                     no_count += 1
-                print(f"{epub_path.name}: {report} - first file: {basename}")
+                if report[0] == 'n' or print_yes:
+                    print(f"{epub_path.name}: {report} - first file: {basename}")
         except Exception:
             print(f"{epub_path.name}: skipped (failed to process)")
             skip_count += 1
