@@ -79,7 +79,18 @@ def analyze_content(z, first_zip_path, book_title):
         'image_count': 0,
         'has_ebookmaker_cover_class': False,
         'has_minimal_text': False,
-        'has_body_image': False
+        'has_body_image': False,
+        'has_meta_cover': False,
+        'has_fullsize_svg': False,
+        'has_page_margin_zero': False,
+        'title_is_cover': False,
+        'has_single_svg_image': False,
+        'body_direct_svg': False,
+        'has_viewbox_svg': False,
+        'css_text_align_center': False,
+        'has_minimal_structure': False,
+        'image_aspect_ratio_portrait': False,
+        'no_navigation_text': False
     }
     try:
         with z.open(first_zip_path) as f:
@@ -87,10 +98,52 @@ def analyze_content(z, first_zip_path, book_title):
             xhtml_ns = 'http://www.w3.org/1999/xhtml'
             svg_ns = 'http://www.w3.org/2000/svg'
             xlink_ns = 'http://www.w3.org/1999/xlink'
+            head_els = content_tree.findall(f'.//{{{xhtml_ns}}}head')
+            if head_els:
+                for head in head_els:
+                    meta_els = head.findall(f'.//{{{xhtml_ns}}}meta')
+                    for meta in meta_els:
+                        name_attr = meta.get('name', '')
+                        content_attr = meta.get('content', '')
+                        if 'cover' in name_attr.lower() or content_attr.lower() == 'true':
+                            indicators['has_meta_cover'] = True
+                    title_els = head.findall(f'.//{{{xhtml_ns}}}title')
+                    for title_el in title_els:
+                        title_text = (title_el.text or '').lower()
+                        if 'cover' in title_text or 'title' in title_text:
+                            indicators['title_is_cover'] = True
+                    style_els = head.findall(f'.//{{{xhtml_ns}}}style')
+                    for style_el in style_els:
+                        style_text = (style_el.text or '').lower()
+                        if 'text-align' in style_text and 'center' in style_text:
+                            indicators['css_text_align_center'] = True
+                        if ('margin' in style_text and '0' in style_text) or ('padding' in style_text and '0' in style_text):
+                            indicators['has_page_margin_zero'] = True
             svg_els = content_tree.findall(f'.//{{{xhtml_ns}}}svg')
             if not svg_els:
                 svg_els = content_tree.findall(f'.//{{{svg_ns}}}svg')
             indicators['has_svg'] = len(svg_els) > 0
+            for svg_el in svg_els:
+                width = svg_el.get('width', '')
+                height = svg_el.get('height', '')
+                preserve = svg_el.get('preserveAspectRatio', '')
+                viewbox = svg_el.get('viewBox', '')
+                if width == '100%' and height == '100%':
+                    indicators['has_fullsize_svg'] = True
+                if viewbox:
+                    indicators['has_viewbox_svg'] = True
+                    try:
+                        parts = viewbox.split()
+                        if len(parts) == 4:
+                            vb_width = float(parts[2])
+                            vb_height = float(parts[3])
+                            if vb_height > vb_width:
+                                indicators['image_aspect_ratio_portrait'] = True
+                    except (ValueError, IndexError):
+                        pass
+                svg_images = svg_el.findall(f'.//{{{svg_ns}}}image')
+                if len(svg_images) == 1:
+                    indicators['has_single_svg_image'] = True
             all_els = content_tree.findall(f'.//*')
             for el in all_els:
                 class_attr = el.get('class', '')
@@ -104,12 +157,18 @@ def analyze_content(z, first_zip_path, book_title):
                     indicators['has_cover_id'] = True
                 if 'text-align' in style_attr and 'center' in style_attr:
                     indicators['has_center_align'] = True
+                if ('margin' in style_attr and '0' in style_attr) or ('padding' in style_attr and '0' in style_attr):
+                    indicators['has_page_margin_zero'] = True
             text_nodes = [t.strip() for t in content_tree.itertext() if t.strip()]
             full_text = ' '.join(text_nodes)
             indicators['text_length'] = len(full_text)
             indicators['has_minimal_text'] = len(full_text) < 100
+            full_text_lower = full_text.lower()
+            nav_words = ['next', 'previous', 'chapter', 'contents', 'table of contents', 'toc']
+            has_nav = any(word in full_text_lower for word in nav_words)
+            indicators['no_navigation_text'] = not has_nav
             if book_title and len(book_title) > 3:
-                indicators['contains_title'] = book_title.lower() in full_text.lower()
+                indicators['contains_title'] = book_title.lower() in full_text_lower
             img_els = content_tree.findall(f'.//{{{xhtml_ns}}}img')
             svg_img_els = content_tree.findall(f'.//{{{svg_ns}}}image')
             svg_img_els += content_tree.findall(f'.//{{{xhtml_ns}}}svg//{{{svg_ns}}}image')
@@ -123,10 +182,28 @@ def analyze_content(z, first_zip_path, book_title):
                 body_children = list(body)
                 if len(body_children) == 1:
                     child = body_children[0]
+                    if child.tag.endswith('svg'):
+                        indicators['body_direct_svg'] = True
                     if child.tag.endswith('div') or child.tag.endswith('svg'):
                         grandchildren = list(child)
-                        if len(grandchildren) == 1 and (grandchildren[0].tag.endswith('img') or grandchildren[0].tag.endswith('svg')):
-                            indicators['has_body_image'] = True
+                        if len(grandchildren) == 1:
+                            if grandchildren[0].tag.endswith('img') or grandchildren[0].tag.endswith('svg'):
+                                indicators['has_body_image'] = True
+                            if grandchildren[0].tag.endswith('svg'):
+                                indicators['body_direct_svg'] = True
+                if len(body_children) <= 2:
+                    simple_structure = True
+                    for child in body_children:
+                        child_children = list(child)
+                        if len(child_children) > 2:
+                            simple_structure = False
+                            break
+                        for grandchild in child_children:
+                            if len(list(grandchild)) > 1:
+                                simple_structure = False
+                                break
+                    if simple_structure:
+                        indicators['has_minimal_structure'] = True
             for el in image_els:
                 src = el.get('src') or el.get(f'{{{xlink_ns}}}href')
                 if src:
@@ -135,6 +212,16 @@ def analyze_content(z, first_zip_path, book_title):
                         indicators['has_cover_image_name'] = True
                     if 'title' in src_lower:
                         indicators['has_title_image_name'] = True
+                width = el.get('width', '')
+                height = el.get('height', '')
+                if width and height:
+                    try:
+                        w_val = float(width)
+                        h_val = float(height)
+                        if h_val > w_val:
+                            indicators['image_aspect_ratio_portrait'] = True
+                    except (ValueError, TypeError):
+                        pass
     except Exception:
         pass
     return indicators
@@ -143,30 +230,46 @@ def classify_titlepage(basename_lower, indicators):
     reasons = []
     if 'titl' in basename_lower or 'cover' in basename_lower or 'wrap' in basename_lower:
         reasons.append('filename')
-    if indicators['has_svg']:
-        reasons.append('svg')
     if indicators['has_ebookmaker_cover_class']:
-        reasons.append('ebookmaker-class')
+        reasons.append('ebookmaker_class')
     elif indicators['has_cover_class']:
-        reasons.append('cover-class')
+        reasons.append('cover_class')
     if indicators['has_cover_id']:
-        reasons.append('cover-id')
+        reasons.append('cover_id')
     if indicators['has_cover_image_name']:
-        reasons.append('cover-img')
+        reasons.append('cover_img')
     if indicators['has_title_image_name']:
-        reasons.append('title-img')
+        reasons.append('title_img')
+    if indicators['has_meta_cover']:
+        reasons.append('meta_cover')
+    if indicators['title_is_cover']:
+        reasons.append('title_is_cover')
+    if indicators['has_fullsize_svg']:
+        reasons.append('fullsize_svg')
+    if indicators['body_direct_svg']:
+        reasons.append('body_direct_svg')
+    if indicators['image_aspect_ratio_portrait']:
+        reasons.append('portrait_ratio')
     if indicators['has_single_image'] and indicators['has_minimal_text']:
-        reasons.append('single-img-minimal-text')
+        reasons.append('single_img_minimal_text')
     elif indicators['has_single_image']:
-        reasons.append('single-img')
-    if indicators['has_body_image']:
-        reasons.append('body-img-structure')
+        reasons.append('single_img')
+    if indicators['has_body_image'] and not indicators['body_direct_svg']:
+        reasons.append('body_img_structure')
     if indicators['has_center_align'] and indicators['image_count'] > 0:
-        reasons.append('centered-img')
+        reasons.append('centered_img')
     if indicators['contains_title'] and indicators['text_length'] < 200:
-        reasons.append('title-text-short')
+        reasons.append('title_text_short')
     if indicators['text_length'] < 50 and indicators['image_count'] > 0:
-        reasons.append('very-minimal-text')
+        reasons.append('very_minimal_text')
+    if indicators['has_page_margin_zero']:
+        reasons.append('margin_zero')
+    if indicators['css_text_align_center']:
+        reasons.append('css_center')
+    if indicators['has_minimal_structure']:
+        reasons.append('minimal_structure')
+    if indicators['no_navigation_text'] and indicators['text_length'] < 300:
+        reasons.append('no_nav')
     return reasons
 
 def main(epub_folder):
@@ -198,7 +301,7 @@ def main(epub_folder):
                 reasons = classify_titlepage(lower_basename, indicators)
                 if problems_only and reasons:
                     continue
-                reason_str = '+'.join(reasons) if reasons else 'none'
+                reason_str = ', '.join(reasons) if reasons else 'none'
                 print(f'{epub_path.name.removesuffix(".epub")[:30]:<30} {reason_str}')
         except Exception as e:
             print(f'{epub_path.name.removesuffix(".epub")[:30]:<30} SKIP: processing error')
@@ -218,4 +321,3 @@ if __name__ == "__main__":
             folder = input('Input folder: ').strip() or '.'
     print()
     main(folder)
-
