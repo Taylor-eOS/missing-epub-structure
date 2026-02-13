@@ -3,24 +3,9 @@ from pathlib import Path
 from zipfile import ZipFile
 from lxml import etree
 import last_folder_helper
+from complex_scan import find_opf_path
 
 print_classification = False
-
-def find_opf_path(z):
-    try:
-        with z.open('META-INF/container.xml') as f:
-            parser = etree.XMLParser(recover=True)
-            tree = etree.parse(f, parser)
-            ns = '{urn:oasis:names:tc:opendocument:xmlns:container}'
-            rootfile = tree.find(f'.//{ns}rootfile')
-            if rootfile is not None:
-                return rootfile.get('full-path')
-    except Exception:
-        pass
-    for name in z.namelist():
-        if name.lower().endswith('.opf'):
-            return name
-    return None
 
 def get_package_version(z, opf_path):
     try:

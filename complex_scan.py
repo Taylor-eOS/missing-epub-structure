@@ -13,8 +13,8 @@ def find_opf_path(z):
             rootfile = tree.find('.//{urn:oasis:names:tc:opendocument:xmlns:container}rootfile')
             if rootfile is not None:
                 return rootfile.get('full-path')
-    except Exception:
-        pass
+    except Exception as e:
+        print(f"Warning: Error reading container.xml: {e}")
     for name in z.namelist():
         if name.lower().endswith('.opf'):
             return name

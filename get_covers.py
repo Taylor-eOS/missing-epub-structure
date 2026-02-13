@@ -4,6 +4,7 @@ from pathlib import Path, PurePosixPath
 from lxml import etree
 from PIL import Image
 import last_folder_helper
+from complex_scan import find_opf_path
 
 max_dimension = 1200
 size_limit = 400
@@ -13,20 +14,6 @@ min_dimension = 400
 min_quality = 70
 quality_step = 5
 dimension_step = 0.95
-
-def find_opf_path(z):
-    try:
-        with z.open('META-INF/container.xml') as f:
-            tree = etree.parse(f)
-            rootfile = tree.find('.//{urn:oasis:names:tc:opendocument:xmlns:container}rootfile')
-            if rootfile is not None:
-                return rootfile.get('full-path')
-    except Exception:
-        pass
-    for name in z.namelist():
-        if name.lower().endswith('.opf'):
-            return name
-    return None
 
 def resolve_href(opf_dir, href):
     return (PurePosixPath(opf_dir) / PurePosixPath(href)).as_posix()

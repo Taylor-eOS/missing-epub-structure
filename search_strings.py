@@ -3,25 +3,12 @@ from lxml import etree
 from pathlib import Path, PurePosixPath
 from collections import Counter
 import last_folder_helper
+from complex_scan import find_opf_path
 
-SEARCH_STRINGS = ["oceanofpdf", "steelrat", "are belong to us"]
+SEARCH_STRINGS = ["oceanofpdf", "steelrat", "are belong to us", "gescannt von", "lol.to", "invisibleorder.com"]
 printKeyError = False
 reportnooccurrences = False
 print_warnings = False
-
-def find_opf_path(z):
-    try:
-        with z.open('META-INF/container.xml') as f:
-            tree = etree.parse(f)
-            rootfile = tree.find('.//{urn:oasis:names:tc:opendocument:xmlns:container}rootfile')
-            if rootfile is not None:
-                return rootfile.get('full-path')
-    except Exception as e:
-        if print_warnings: print(f"Warning: Error reading container.xml: {e}")
-    for name in z.namelist():
-        if name.lower().endswith('.opf'):
-            return name
-    return None
 
 def parse_opf(z, opf_path):
     with z.open(opf_path) as f:

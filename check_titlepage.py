@@ -4,22 +4,9 @@ from pathlib import Path, PurePosixPath
 from lxml import etree
 import last_folder_helper
 from get_covers import find_cover_path
+from complex_scan import find_opf_path
 
 problems_only = False
-
-def find_opf_path(z):
-    try:
-        with z.open('META-INF/container.xml') as f:
-            tree = etree.parse(f)
-            rootfile = tree.find('.//{urn:oasis:names:tc:opendocument:xmlns:container}rootfile')
-            if rootfile is not None:
-                return rootfile.get('full-path')
-    except Exception:
-        pass
-    for name in z.namelist():
-        if name.lower().endswith('.opf'):
-            return name
-    return None
 
 def resolve_href(opf_dir, href):
     return (PurePosixPath(opf_dir) / PurePosixPath(href)).as_posix()
