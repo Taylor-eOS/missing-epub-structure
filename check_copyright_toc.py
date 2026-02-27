@@ -188,10 +188,10 @@ def main(folder):
         result, warnings = analyze_epub(str(epub_path))
         name = epub_path.name.replace('.epub', '')
         for w in warnings:
-            print(f"{name[:30]}: {w}")
+            print(f"{name}: {w}")
         if result:
             found += 1
-            print(f"{name[:30]}: {', '.join(result)}")
+            print(f"{name}: {', '.join(result)}")
     if found == 0:
         print("No copyright pages found in any TOC")
 
