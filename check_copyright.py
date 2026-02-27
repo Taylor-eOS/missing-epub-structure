@@ -167,8 +167,8 @@ def main(folder):
         page_num, detail = find_copyright_page(str(epub_path))
         name = epub_path.name.replace('.epub', '')
         if page_num is not None:
+            total = detail[1]
             if print_all or page_num > 4:
-                total = detail[1]
                 print(f"{name}: {page_num} of {total}")
         else:
             print(f"{name}: {detail[0]}")
