@@ -32,6 +32,7 @@ def parse_opf(z, opf_path):
         parser = etree.XMLParser(recover=True)
         tree = etree.parse(f, parser)
         root = tree.getroot()
+        epub_version = root.get('version') or ''
         opf_ns = None
         for ns in (root.nsmap or {}).values():
             if ns and 'opf' in ns:
@@ -60,7 +61,7 @@ def parse_opf(z, opf_path):
                 if idref:
                     spine.append(idref)
         opf_dir = PurePosixPath(opf_path).parent.as_posix()
-        return manifest, spine, opf_dir, spine_toc
+        return manifest, spine, opf_dir, spine_toc, epub_version
 
 def find_copyright_path(z, manifest, spine, opf_dir):
     xhtml_paths = get_spine_xhtml_paths(z, manifest, spine, opf_dir)
@@ -153,7 +154,9 @@ def analyze_epub(epub_path):
             opf_path = find_opf_path(z)
             if opf_path is None:
                 return None, ['OPF not found']
-            manifest, spine, opf_dir, spine_toc = parse_opf(z, opf_path)
+            manifest, spine, opf_dir, spine_toc, epub_version = parse_opf(z, opf_path)
+            if epub_version.startswith('3'):
+                warnings.append(f'EPUB3 detected (results may be unreliable)')
             ncx_hrefs, ncx_error = extract_ncx_hrefs(z, opf_dir, manifest, spine_toc)
             if ncx_error:
                 warnings.append(ncx_error)
