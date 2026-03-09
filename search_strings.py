@@ -5,7 +5,13 @@ from collections import Counter
 import last_folder_helper
 from complex_scan import find_opf_path
 
-SEARCH_STRINGS = ["oceanofpdf", "steelrat", "are belong to us", "gescannt von", "lol.to", "invisibleorder.com", "FULL PROJECT GUTENBERG", "KeVkRaY"]
+SEARCH_STRINGS = ["oceanofpdf", "steelrat", "are belong to us", "gescannt von", "lol.to", "invisibleorder.com", "FULL PROJECT GUTENBERG", "KeVkRaY", "chenjin5.com"]
+user_input = input("Enter search term (ad defaults): ").strip()
+if user_input:
+    search_terms = [user_input]
+else:
+    search_terms = SEARCH_STRINGS.copy()
+print("Searching for:", search_terms)
 printKeyError = False
 reportnooccurrences = False
 print_warnings = False
